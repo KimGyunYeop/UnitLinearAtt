@@ -1,0 +1,2 @@
+nohup bash train0.sh > outputs/1116_train0.log &
+nohup bash train1.sh > outputs/1116_train1.log &

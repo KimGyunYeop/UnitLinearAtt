@@ -1,0 +1,11 @@
+outputs/*
+
+results/*
+
+tokenzier/*
+
+visualize/*
+
+vocabs/*
+
+!*README.md
