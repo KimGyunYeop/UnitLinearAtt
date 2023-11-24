@@ -93,11 +93,12 @@ except:
     
     def group_texts(examples):
         src_input_ids = src_tokenizer.encode(examples["translation"][args.src_lang])
+        # print(src_input_ids)
         tgt_input_ids = tgt_tokenizer.encode(examples["translation"][args.tgt_lang])
         
         return {"src_input_ids":src_input_ids, "tgt_input_ids":tgt_input_ids}
 
-    data = data.map(group_texts, num_proc=num_proc)
+    data = data.map(group_texts, num_proc=1, load_from_cache_file=False)
     os.makedirs(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)),exist_ok=True)
     data.save_to_disk(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)))
 
@@ -143,12 +144,13 @@ if args.model_type == "seq2seq":
     model = AttentionModel(args=args, src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
     
 elif args.model_type == "transformer":
-    args = vars(args)
     transformer_config = json.load(open("transformer_config.json", "r"))
+    transformer_config["vocab_size"] = args.tokenizer_maxvocab
+    args = vars(args)
     args.update(transformer_config)
-    args = Namespace(args)
+    args = Namespace(**args)
     
-    model = Transformer(args=args, src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
+    model = Transformer(config=args, src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
     
 else:
     assert "error model type"
@@ -170,7 +172,7 @@ else:
     elif args.model_type == "transformer":
         model.cuda(device)
         optimizer = Adam(model.parameters(), lr=0.0001)
-        scheduler = StepLR(optimizer, milestones=5, gamma=0.8)
+        scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     else:
         assert "error model type"
 
@@ -209,7 +211,6 @@ for e in range(args.epoch):
     for batches, label, texts in tqdm(train_dataloader):
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
-        # print(batches[0].size())
 
         if args.deepspeed:
             logits = engine.forward(batches[0], batches[1])
@@ -298,6 +299,8 @@ for e in range(args.epoch):
         if e >= args.warmup_schedule:
             for param_group in optimizer.param_groups: 
                 param_group['lr'] = param_group['lr']*0.5
+    elif args.model_type == "transformer":
+        scheduler.step()
     
 ######################################################################################################            
     

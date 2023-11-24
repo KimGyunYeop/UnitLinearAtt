@@ -191,8 +191,9 @@ class PositionalEncoding(nn.Module):
 
 # mulithead attention
 class MultiHeadAttention(nn.Module):
-    def __init__(self, hidden_dim, num_head, bias, self_attn, causal):
+    def __init__(self, args, hidden_dim, num_head, bias, self_attn, causal):
         super(MultiHeadAttention, self).__init__()
+        self.args = args
         self.hidden_dim = hidden_dim
         self.num_head = num_head
         self.bias = bias
@@ -205,6 +206,35 @@ class MultiHeadAttention(nn.Module):
         self.k_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=self.bias)
         self.v_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=self.bias)
         self.attn_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=self.bias)
+        
+        if not self.args.no_QKproj:
+            if args.softmax_linear:
+                if args.share_eye:
+                    self.eye_linear = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
+                else:
+                    self.eye_linear_q = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
+                    self.eye_linear_k = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
+                
+            else:
+                if args.share_eye:
+                    self.eye_linear = nn.Linear(self.head_dim,self.head_dim,bias=False)
+                    
+                    if not args.random_init:
+                        self.eye_linear.weight.data = torch.nn.Parameter(
+                            torch.eye(self.head_dim)
+                        )
+                else:
+                    self.eye_linear_q = nn.Linear(self.head_dim,self.head_dim,bias=False)
+                    self.eye_linear_k = nn.Linear(self.head_dim,self.head_dim,bias=False)
+                    
+                    if not args.random_init:
+                        self.eye_linear_q.weight.data = torch.nn.Parameter(
+                            torch.eye(self.head_dim)
+                        )
+                        
+                        self.eye_linear_k.weight.data = torch.nn.Parameter(
+                            torch.eye(self.head_dim)
+                        )
 
 
     def head_split(self, x):
@@ -236,6 +266,14 @@ class MultiHeadAttention(nn.Module):
         q = self.head_split(self.q_proj(query))
         k = self.head_split(self.k_proj(key))
         v = self.head_split(self.v_proj(value))
+        
+        if not self.args.no_QKproj:
+            if self.args.share_eye:
+                q = self.eye_linear(q)
+                k = self.eye_linear(k)
+            else:
+                q = self.eye_linear_q(q)
+                k = self.eye_linear_k(k)
 
         attn_wts, attn_out = self.scaled_dot_product(q, k, v, mask)
         attn_out = self.attn_proj(self.reshaping(attn_out))
@@ -279,8 +317,9 @@ class PositionWiseFeedForward(nn.Module):
 
 # a single encoder layer
 class EncoderLayer(nn.Module):
-    def __init__(self, hidden_dim, ffn_dim, num_head, bias, dropout, layernorm_eps):
+    def __init__(self, args, hidden_dim, ffn_dim, num_head, bias, dropout, layernorm_eps):
         super(EncoderLayer, self).__init__()
+        self.args = args
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim
         self.num_head = num_head
@@ -290,7 +329,7 @@ class EncoderLayer(nn.Module):
         self.dropout_layer = nn.Dropout(self.dropout)
         self.layer_norm = nn.LayerNorm(self.hidden_dim, eps=self.layernorm_eps)
 
-        self.self_attention = MultiHeadAttention(self.hidden_dim, self.num_head, self.bias, self_attn=True, causal=False)
+        self.self_attention = MultiHeadAttention(self.args, self.hidden_dim, self.num_head, self.bias, self_attn=True, causal=False)
         self.positionWiseFeedForward = PositionWiseFeedForward(self.hidden_dim, self.ffn_dim, self.dropout, self.bias)
 
 
@@ -325,10 +364,12 @@ class Encoder(nn.Module):
         self.layernorm_eps = config.layernorm_eps
         self.pos_encoding = config.pos_encoding
         
+        self.args = config
+        
         self.dropout_layer = nn.Dropout(self.dropout)
         self.emb_layer = Embeddings(self.vocab_size, self.hidden_dim, self.pad_token_id)
         self.pos_layer = PositionalEncoding(self.max_len, self.hidden_dim, self.pos_encoding)
-        self.encoders = nn.ModuleList([EncoderLayer(self.hidden_dim, self.ffn_dim, self.num_head, self.bias, self.dropout, self.layernorm_eps) for _ in range(self.enc_num_layers)])
+        self.encoders = nn.ModuleList([EncoderLayer(self.args, self.hidden_dim, self.ffn_dim, self.num_head, self.bias, self.dropout, self.layernorm_eps) for _ in range(self.enc_num_layers)])
 
 
     def forward(self, x, mask=None):
@@ -346,8 +387,9 @@ class Encoder(nn.Module):
 
 # a single decoder layer
 class DecoderLayer(nn.Module):
-    def __init__(self, hidden_dim, ffn_dim, num_head, bias, dropout, layernorm_eps):
+    def __init__(self, args, hidden_dim, ffn_dim, num_head, bias, dropout, layernorm_eps):
         super(DecoderLayer, self).__init__()
+        self.args = args
         self.hidden_dim = hidden_dim
         self.ffn_dim = ffn_dim
         self.num_head = num_head
@@ -357,8 +399,8 @@ class DecoderLayer(nn.Module):
         self.dropout_layer = nn.Dropout(self.dropout)
         self.layer_norm = nn.LayerNorm(self.hidden_dim, eps=self.layernorm_eps)
 
-        self.masked_self_attention = MultiHeadAttention(self.hidden_dim, self.num_head, self.bias, self_attn=True, causal=True)
-        self.enc_dec_attention = MultiHeadAttention(self.hidden_dim, self.num_head, self.bias, self_attn=False, causal=False)
+        self.masked_self_attention = MultiHeadAttention(self.args, self.hidden_dim, self.num_head, self.bias, self_attn=True, causal=True)
+        self.enc_dec_attention = MultiHeadAttention(self.args, self.hidden_dim, self.num_head, self.bias, self_attn=False, causal=False)
         self.positionWiseFeedForward = PositionWiseFeedForward(self.hidden_dim, self.ffn_dim, self.dropout, self.bias)
 
 
@@ -397,11 +439,13 @@ class Decoder(nn.Module):
         self.dropout = config.dropout
         self.layernorm_eps = config.layernorm_eps
         self.pos_encoding = config.pos_encoding
+        
+        self.args = config
 
         self.dropout_layer = nn.Dropout(self.dropout)
         self.emb_layer = Embeddings(self.vocab_size, self.hidden_dim, self.pad_token_id)
         self.pos_layer = PositionalEncoding(self.max_len, self.hidden_dim, self.pos_encoding)
-        self.decoders = nn.ModuleList([DecoderLayer(self.hidden_dim, self.ffn_dim, self.num_head, self.bias, self.dropout, self.layernorm_eps) for _ in range(self.dec_num_layers)])
+        self.decoders = nn.ModuleList([DecoderLayer(self.args, self.hidden_dim, self.ffn_dim, self.num_head, self.bias, self.dropout, self.layernorm_eps) for _ in range(self.dec_num_layers)])
 
 
     def forward(self, x, enc_output, dec_causal_mask=None, enc_dec_mask=None):

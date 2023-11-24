@@ -1,14 +1,13 @@
 #/bin/bash
 
-result_path="en_de_lstm_base_reverse_dropout_5000"
+result_path="en_de_transformer_2eye_5000"
 
 python -u -m  train_attention.py \
     --result_path $result_path \
-    --model_type seq2seq\
+    --model_type transformer\
     --src_lang en \
     --tgt_lang de \
     --gpu 1 \
-    --no_attention \
     --source_reverse \
     --tokenizer_maxvocab 5000
 
