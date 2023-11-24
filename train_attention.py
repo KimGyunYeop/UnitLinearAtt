@@ -4,7 +4,7 @@ import transformers
 import torch
 from torch import nn
 from torch.optim import Adam, SGD
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from torch.optim.lr_scheduler import StepLR, MultiStepLR
 import wandb
 
@@ -14,18 +14,44 @@ from tqdm import tqdm
 
 from utils import parse_args, load_word_tokenizer, load_bert_tokenizer
 from tokenizer import SentencePeiceTokenizer
-from models import AttentionModel
+from models import AttentionModel, Transformer
 from dataset import MTDataset
 import evaluate
+from argparse import Namespace
+
+import deepspeed
+from deepspeed.comm import comm
+
+torch.manual_seed("1234")
+torch.cuda.manual_seed_all("1234")
+
+def make_dir(args):
+    result_path = os.path.join("results",args.result_path)
+    if "test" in args.result_path:
+        os.makedirs(result_path, exist_ok=True)
+    else:
+        os.mkdir(result_path)
 
 # mt_type = "de-en"
 args = parse_args()
-device = "cuda:{}".format(str(args.gpu))
 result_path = os.path.join("results",args.result_path)
-if "test" in args.result_path:
-    os.makedirs(result_path, exist_ok=True)
+device = "cuda:{}".format(str(args.gpu))
+
+if args.deepspeed:
+    comm.init_distributed("nccl")
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
+    rank = comm.get_rank()
+    world_size = comm.get_world_size()
+    torch.cuda.set_device(args.local_rank)
+    device = torch.cuda.current_device()
+    
+    if rank == 0:
+        make_dir(args)
+
 else:
-    os.mkdir(result_path)
+    make_dir(args)
+
 
 try:
     mt_type = "-".join([args.src_lang, args.tgt_lang])
@@ -52,9 +78,9 @@ src_tokenizer, tgt_tokenizer = load_bert_tokenizer(args, data, mt_type)
 
 
 if args.tokenizer_uncased:
-    vocab_path = args.dataset+"_"+mt_type+"_"+"uncased"
+    vocab_path = args.dataset+"_"+mt_type+"_"+"uncased_"+str(args.tokenizer_maxvocab)
 else:
-    vocab_path = args.dataset+"_"+mt_type+"_"+"cased"
+    vocab_path = args.dataset+"_"+mt_type+"_"+"cased_"+str(args.tokenizer_maxvocab)
 
 try:
     print("load dataset...")
@@ -77,28 +103,79 @@ except:
 
 print(data)
 print("filtering...")
-data = data.filter(lambda x:len(x["src_input_ids"]) < 51 and len(x["tgt_input_ids"]) < 51)
+# data = data.filter(lambda x:len(x["translation"][args.src_lang].split()) <= args.max_word and len(x["translation"][args.src_lang].split()) <= args.max_word)
+data = data.filter(lambda x:len(x["src_input_ids"]) <= args.max_vocab and len(x["tgt_input_ids"]) <= args.max_vocab)
 print(data)
-# data["train"] = data["train"][:500]
-# print(data["train"])
-train_dataset = MTDataset(data["train"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang)
-dev_dataset = MTDataset(data["validation"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang)
-test_dataset = MTDataset(data["test"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang)
 
-train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=train_dataset.collate_fn)
-dev_dataloader = DataLoader(dev_dataset, batch_size=args.batch_size, collate_fn=dev_dataset.collate_fn)
-test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=test_dataset.collate_fn)
+train_dataset = MTDataset(data["train"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang, source_reverse=args.source_reverse)
+dev_dataset = MTDataset(data["validation"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang, source_reverse=args.source_reverse)
+test_dataset = MTDataset(data["test"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang, source_reverse=args.source_reverse)
+
+print("deepspeed",args.deepspeed)
+if args.deepspeed:
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=train_dataset.collate_fn,
+                                  sampler=DistributedSampler(train_dataset, num_replicas=world_size), num_workers=4)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=args.batch_size, collate_fn=dev_dataset.collate_fn,
+                                sampler=DistributedSampler(train_dataset, num_replicas=world_size), num_workers=4)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=test_dataset.collate_fn,
+                                 sampler=DistributedSampler(train_dataset, num_replicas=world_size), num_workers=4)
+    
+else:
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=train_dataset.collate_fn, num_workers=4)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=args.batch_size, collate_fn=dev_dataset.collate_fn, num_workers=4)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=test_dataset.collate_fn, num_workers=4)
+
+
+# for batches, label, texts in tqdm(train_dataloader):
+#     batches = [batch.cuda(device) for batch in batches]
+#     print(texts[0][0:5])
+#     print(texts[1][0:5])
+#     print(batches[0].size())
+#     print(src_tokenizer.tokenizer.batch_decode(batches[0],skip_special_tokens=True, clean_up_tokenization_spaces=True)[0:5])
+#     print(batches[1].size())
+#     print(tgt_tokenizer.tokenizer.batch_decode(batches[1],skip_special_tokens=True, clean_up_tokenization_spaces=True)[0:5])
+#     print(tgt_tokenizer.tokenizer.batch_decode(label,skip_special_tokens=True, clean_up_tokenization_spaces=True)[0:5])
+#     print(label)
+#     print(tgt_tokenizer.unk_token_id)
+#     assert 0
 
 if args.model_type == "seq2seq":
     model = AttentionModel(args=args, src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
-    model.cuda(device)
-    optimizer = SGD(model.parameters(), lr=1)
+    
+elif args.model_type == "transformer":
+    args = vars(args)
+    transformer_config = json.load(open("transformer_config.json", "r"))
+    args.update(transformer_config)
+    args = Namespace(args)
+    
+    model = Transformer(args=args, src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
+    
 else:
     assert "error model type"
 
+if args.deepspeed:
+    if args.model_type == "seq2seq":
+        args.deepspeed_config = "ds_config_seq2seq.json"
+        
+    engine, optimizer, _, _ = deepspeed.initialize(
+        args=args,
+        model=model,
+        model_parameters=model.parameters())
+    
+else:
+    if args.model_type == "seq2seq":
+        model.cuda(device)
+        optimizer = SGD(model.parameters(), lr=1)
+        scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
+    elif args.model_type == "transformer":
+        model.cuda(device)
+        optimizer = Adam(model.parameters(), lr=0.0001)
+        scheduler = StepLR(optimizer, milestones=5, gamma=0.8)
+    else:
+        assert "error model type"
+
 print(model)
 # optimizer = Adam(model.parameters(), lr=args.learning_rate)
-scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
 lf = nn.CrossEntropyLoss()
     
 sacrebleu = evaluate.load("sacrebleu")
@@ -116,7 +193,10 @@ json.dump(vars(args), open(os.path.join(result_path, "config.json"), "w"), inden
 result_dict = {}
 step = 0
 for e in range(args.epoch):
-    model.train()
+    if args.deepspeed:
+        engine.train()
+    else:
+        model.train()
     
     for name, child in model.named_children():
         for param in child.parameters():
@@ -127,25 +207,34 @@ for e in range(args.epoch):
                 print(param.requires_grad)
                     
     for batches, label, texts in tqdm(train_dataloader):
-        optimizer.zero_grad()
-        
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
+        # print(batches[0].size())
 
-        logits = model(batches[0], batches[1])
-        # print(logits.shape)
-        loss = lf(logits.view(-1, tgt_vocab_size), label.view(-1))
-        # print(loss)
-        loss.backward()
-        
-        if args.model_type == "seq2seq":
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+        if args.deepspeed:
+            logits = engine.forward(batches[0], batches[1])
+            loss = lf(logits.view(-1, tgt_vocab_size), label.view(-1))
             
-        optimizer.step()
+            engine.backward(loss)
+            engine.step()
+            
+        else:
+            logits = model(batches[0], batches[1])
+            loss = lf(logits.view(-1, tgt_vocab_size), label.view(-1))
+        
+            loss.backward()
+            if args.model_type == "seq2seq":
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            optimizer.step()
+            optimizer.zero_grad()
 
         step += 1
 
-    model.eval()
+    if args.deepspeed:
+        engine.eval()
+    else:
+        model.eval()
+        
     text_list = []
     pred_list = []
     with torch.no_grad():
@@ -157,7 +246,11 @@ for e in range(args.epoch):
             batches = [batch.cuda(device) for batch in batches]
             label = label.cuda(device)
 
-            logits = model(batches[0], batches[1])
+
+            if args.deepspeed:
+                logits = engine.forward(batches[0], batches[1])
+            else:
+                logits = model(batches[0], batches[1])
 
             pred = torch.argmax(logits, dim=-1)
 
@@ -192,12 +285,19 @@ for e in range(args.epoch):
     
     save_path = os.path.join(result_path, str(e))
     os.makedirs(save_path, exist_ok=True)
+    if args.deepspeed:
+        engine.save_checkpoint(os.path.join(save_path,"ds"))
+        
+        json.dump(result_dict, open(os.path.join(result_path, "result_{}.json".format(rank)), "w"), indent=2)
+        
     torch.save(model.state_dict(), os.path.join(save_path,'model_state_dict.pt'))
     torch.save(optimizer.state_dict(), os.path.join(save_path,'optimizer.pt'))
     json.dump(result_dict, open(os.path.join(result_path, "result.json"), "w"), indent=2)
     
-    if e >= args.warmup_schedule:
-        scheduler.step()
+    if args.model_type == "seq2seq":
+        if e >= args.warmup_schedule:
+            for param_group in optimizer.param_groups: 
+                param_group['lr'] = param_group['lr']*0.5
     
 ######################################################################################################            
     

@@ -1,19 +1,18 @@
 #/bin/bash
 
-result_path="en_de_lstm_base_reverse_dropout_5000"
+result_path="en_de_lstm_base_reverse_dropout_ds_test"
 
-python -u -m  train_attention.py \
+deepspeed --num_gpus=4 train_attention.py \
+    --deepspeed \
     --result_path $result_path \
     --model_type seq2seq\
     --src_lang en \
     --tgt_lang de \
-    --gpu 1 \
     --no_attention \
-    --source_reverse \
-    --tokenizer_maxvocab 5000
+    --source_reverse
 
     
-python -u -m  test_bleu.py \
+python -u -m  test.py \
     --result_path $result_path \
     --gpu 1
 

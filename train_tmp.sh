@@ -6,5 +6,7 @@ python -u -m  train_attention.py \
     --src_lang en \
     --tgt_lang de \
     --gpu 0 \
-    --random_init 
+    --random_init \
+    --source_reverse \
+    --tokenizer_maxvocab 5000
 

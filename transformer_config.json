@@ -1,0 +1,13 @@
+{
+    "vocab_size": 10000,
+    "max_len": 32,
+    "hidden_dim": 1024,
+    "ffn_dim": 4096,
+    "enc_num_layers": 6,
+    "dec_num_layers": 6,
+    "num_head": 16,
+    "bias": 0,
+    "dropout": 0.1,
+    "layernorm_eps": 1e-6,
+    "pos_encoding": 0
+}

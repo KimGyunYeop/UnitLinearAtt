@@ -53,13 +53,13 @@ args.update(json_object)
 args = Namespace(**args)
 
 # print(result_dict)
-max_acc = 0
+max_sacrebleu = 0
 best_epoch = 0
 for e, i in result_dict.items():
-    if i["accuracy"] >= max_acc:
-        max_acc = i["accuracy"]
+    if i["sacrebleu"] >= max_sacrebleu:
+        max_sacrebleu = i["sacrebleu"]
         best_epoch = e
-print("base epoch=",best_epoch,"\t acc=",max_acc)
+print("base epoch=",best_epoch,"\t sacrebleu=",max_sacrebleu)
 
 try:
     mt_type = "-".join([args.src_lang, args.tgt_lang])
@@ -79,9 +79,9 @@ src_tokenizer, tgt_tokenizer = load_bert_tokenizer(args, data, mt_type)
 
 
 if args.tokenizer_uncased:
-    vocab_path = args.dataset+"_"+mt_type+"_"+"uncased"
+    vocab_path = args.dataset+"_"+mt_type+"_"+"uncased_"+str(args.tokenizer_maxvocab)
 else:
-    vocab_path = args.dataset+"_"+mt_type+"_"+"cased"
+    vocab_path = args.dataset+"_"+mt_type+"_"+"cased_"+str(args.tokenizer_maxvocab)
 
 try:
     data = datasets.load_from_disk(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)))
@@ -155,7 +155,7 @@ with torch.no_grad():
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
 
-        outputs, test_logit = model.generate(batches[0])
+        outputs, test_logit = model.generate(batches[0], max_len=args.max_vocab)
         # print(outputs)
         
         batch_size, seq_len, prob_dim = test_logit.size()

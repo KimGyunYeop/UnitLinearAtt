@@ -38,6 +38,12 @@ def parse_args():
     parser.add_argument(
         "--source_reverse", default=False, action="store_true", required=False
     )
+    parser.add_argument(
+        "--max_vocab", type=int, default=128, required=False
+    )
+    parser.add_argument(
+        "--max_word", type=int, default=50, required=False
+    )
     
     parser.add_argument(
         "--no_attention", default=False, action="store_true", required=False
@@ -80,6 +86,21 @@ def parse_args():
     parser.add_argument(
         "--capture_range", type=int, default=None, required=False
     )
+    
+    #for deepspeed
+    parser.add_argument(
+        "--deepspeed", default=False, action="store_true", required=False
+    )
+    parser.add_argument("--local-rank", type=int, default=0)
+    parser.add_argument('--global_rank', type=int, default=0)
+    parser.add_argument('--vis_step', type=int, default=10)
+    parser.add_argument('--num_workers', type=int, default=24)
+    parser.add_argument("--local_rank", type=int,
+                        help="Local rank. Necessary for using the torch.distributed.launch utility.")
+    parser.add_argument('--world_size', type=int, default=0)
+    parser.add_argument("--model_config",default=None)
+    parser.add_argument("--deepspeed_config", type=str, default="ds_config.json")
+    
     
     args = parser.parse_args()
     return args
@@ -156,9 +177,9 @@ def make_bert_tokenizer_vocab(args, data, mt_type):
     os.makedirs("vocabs", exist_ok=True)
 
     if args.tokenizer_uncased:
-        vocab_path = args.dataset+"_"+mt_type+"_"+"uncased"
+        vocab_path = args.dataset+"_"+mt_type+"_"+"uncased_"+str(args.tokenizer_maxvocab)
     else:
-        vocab_path = args.dataset+"_"+mt_type+"_"+"cased"
+        vocab_path = args.dataset+"_"+mt_type+"_"+"cased_"+str(args.tokenizer_maxvocab)
 
     os.makedirs(os.path.join("vocabs", vocab_path), exist_ok=True)
     if not os.path.isdir(os.path.join("vocabs", vocab_path, args.src_lang)):

@@ -9,9 +9,9 @@ class Tokenizer_wmt:
     def __init__(self, args, mt_type, lang=None):
         
         if args.tokenizer_uncased:
-            vocab_path = args.dataset+"_"+mt_type+"_"+"uncased"
+            vocab_path = args.dataset+"_"+mt_type+"_"+"uncased_"+str(args.tokenizer_maxvocab)
         else:
-            vocab_path = args.dataset+"_"+mt_type+"_"+"cased"
+            vocab_path = args.dataset+"_"+mt_type+"_"+"cased_"+str(args.tokenizer_maxvocab)
 
         self.tokenizer = BertTokenizer(vocab_file=os.path.join("vocabs", vocab_path, lang, "vocab.txt"), do_lower_case=args.tokenizer_uncased) 
 
