@@ -9,3 +9,5 @@ visualize/*
 vocabs/*
 
 !*README.md
+
+__pycache__/*
