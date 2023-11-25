@@ -105,7 +105,7 @@ except:
 print(data)
 print("filtering...")
 # data = data.filter(lambda x:len(x["translation"][args.src_lang].split()) <= args.max_word and len(x["translation"][args.src_lang].split()) <= args.max_word)
-data = data.filter(lambda x:len(x["src_input_ids"]) <= args.max_vocab and len(x["tgt_input_ids"]) <= args.max_vocab)
+data = data.filter(lambda x:len(x["src_input_ids"]) <= args.max_vocab and len(x["tgt_input_ids"]) <= args.max_vocab, load_from_cache_file=False)
 print(data)
 
 train_dataset = MTDataset(data["train"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang, source_reverse=args.source_reverse)
@@ -192,6 +192,8 @@ tgt_pad_token_id = train_dataset.tgt_pad_token_id
 # )        
 
 json.dump(vars(args), open(os.path.join(result_path, "config.json"), "w"), indent=2)
+with open(os.path.join(result_path, "model.txt"), "w") as text_file:
+    text_file.write(str(model))
 result_dict = {}
 step = 0
 for e in range(args.epoch):
