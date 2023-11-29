@@ -167,8 +167,10 @@ if args.deepspeed:
 else:
     if args.model_type == "seq2seq":
         model.cuda(device)
-        optimizer = SGD(model.parameters(), lr=1)
-        scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
+        # optimizer = SGD(model.parameters(), lr=1)
+        # scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
+        optimizer = Adam(model.parameters(), lr=0.0001)
+        scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     elif args.model_type == "transformer":
         model.cuda(device)
         optimizer = Adam(model.parameters(), lr=0.0001)
@@ -176,6 +178,7 @@ else:
     else:
         assert "error model type"
 
+print(args)
 print(model)
 # optimizer = Adam(model.parameters(), lr=args.learning_rate)
 lf = nn.CrossEntropyLoss()
@@ -298,9 +301,10 @@ for e in range(args.epoch):
     json.dump(result_dict, open(os.path.join(result_path, "result.json"), "w"), indent=2)
     
     if args.model_type == "seq2seq":
-        if e >= args.warmup_schedule:
-            for param_group in optimizer.param_groups: 
-                param_group['lr'] = param_group['lr']*0.5
+        scheduler.step()
+        # if e >= args.warmup_schedule:
+        #     for param_group in optimizer.param_groups: 
+        #         param_group['lr'] = param_group['lr']*0.5
     elif args.model_type == "transformer":
         scheduler.step()
     

@@ -11,7 +11,6 @@ deepspeed --num_gpus=4 train_attention.py \
     --no_attention \
     --source_reverse
 
-    
 python -u -m  test.py \
     --result_path $result_path \
     --gpu 1

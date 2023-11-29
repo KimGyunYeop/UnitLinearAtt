@@ -13,3 +13,7 @@ vocabs/*
 __pycache__/*
 
 RFormer/*
+
+tmp.py
+
+*.sh

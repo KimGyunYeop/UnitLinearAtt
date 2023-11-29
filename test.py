@@ -18,6 +18,7 @@ from dataset import MTDataset
 from nltk.translate.bleu_score import sentence_bleu
 from torcheval.metrics import Perplexity
 import evaluate
+import subprocess
 
 from argparse import Namespace
 
@@ -33,10 +34,12 @@ def cal_multi_bleu_perl(base_path, ref, pred):
     txt_write(base_path+'etc/pred.txt', p)
 
     cmd = base_path+'etc/multi_bleu.perl ' + base_path+'etc/ref.txt < ' + base_path+'etc/pred.txt'
-    os.system(cmd)
+    result = subprocess.check_output(cmd, shell=True)
 
     os.remove(base_path+'etc/ref.txt')
     os.remove(base_path+'etc/pred.txt')
+    
+    return str(result)
 
 args = parse_args()    
 device = "cuda:{}".format(str(args.gpu))
@@ -55,11 +58,13 @@ args = Namespace(**args)
 # print(result_dict)
 max_sacrebleu = 0
 best_epoch = 0
+eval_acc = 0
 for e, i in result_dict.items():
     if i["sacrebleu"] >= max_sacrebleu:
         max_sacrebleu = i["sacrebleu"]
+        eval_acc = i["accuracy"]
         best_epoch = e
-print("base epoch=",best_epoch,"\t sacrebleu=",max_sacrebleu)
+print("base epoch=",best_epoch,"\t max eval sacrebleu=",max_sacrebleu, "\t eval acc=",eval_acc)
 
 try:
     mt_type = "-".join([args.src_lang, args.tgt_lang])
@@ -68,15 +73,7 @@ except:
     mt_type = "-".join([args.tgt_lang, args.src_lang])
     data = datasets.load_dataset(args.dataset, mt_type, cache_dir="../../dataset/WMT")
 
-# src_tokenizer = SentencePeiceTokenizer(uncased=args.tokenizer_uncased)
-# src_tokenizer = SentencePeiceTokenizer(uncased=args.tokenizer_uncased, max_vocab=args.tokenizer_maxvocab)
-# src_tokenizer.load_vocab("./tokenzier/{}_{}_{}.json".format(args.dataset, mt_type, args.src_lang))
-
-# tgt_tokenizer = SentencePeiceTokenizer(uncased=args.tokenizer_uncased, max_vocab=args.tokenizer_maxvocab)
-# tgt_tokenizer.load_vocab("./tokenzier/{}_{}_{}.json".format(args.dataset, mt_type, args.tgt_lang))
-
 src_tokenizer, tgt_tokenizer = load_bert_tokenizer(args, data, mt_type)
-
 
 if args.tokenizer_uncased:
     vocab_path = args.dataset+"_"+mt_type+"_"+"uncased_"+str(args.tokenizer_maxvocab)
@@ -86,26 +83,10 @@ else:
 try:
     data = datasets.load_from_disk(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)))
 except:
-    # import multiprocessing
-    # num_proc = multiprocessing.cpu_count()
-    num_proc = 1
-    
-    def group_texts(examples):
-        src_input_ids = src_tokenizer.encode(examples["translation"][args.src_lang])
-        tgt_input_ids = tgt_tokenizer.encode(examples["translation"][args.tgt_lang])
-        
-        return {"src_input_ids":src_input_ids, "tgt_input_ids":tgt_input_ids}
+    assert "load vocab error"
 
-    data = data.map(group_texts, num_proc=num_proc)
-    os.makedirs(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)))
-    data.save_to_disk(os.path.join("vocabs", vocab_path, "{}_{}_tokenized".format(args.src_lang, args.tgt_lang)))
-
-data = data.filter(lambda x:len(x["src_input_ids"]) < 51 and len(x["tgt_input_ids"]) < 51)
-print(data)
-
-# data["test"] = data["test"].filter(lambda x:len(x["translation"][args.src_lang].split(" ")) < 51 and len(x["translation"][args.tgt_lang].split(" ")) < 51)
-data["test"] = data["test"].filter(lambda x:len(x["src_input_ids"]) < 51 and len(x["tgt_input_ids"]) < 51)
-test_dataset = MTDataset(data["test"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang)
+data["test"] = data["test"].filter(lambda x:len(x["src_input_ids"]) < args.max_vocab and len(x["tgt_input_ids"]) < args.max_vocab)
+test_dataset = MTDataset(data["test"], src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer, src_key=args.src_lang, tgt_key=args.tgt_lang, source_reverse=args.source_reverse)
 
 test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=test_dataset.collate_fn)
 
@@ -196,5 +177,8 @@ with torch.no_grad():
     print("final sacreBLEU = ",final_sacrebleu_score["score"])
     print("\n\n")
     
-    cal_multi_bleu_perl("./", text_list, pred_list)
+    multi_bleu = cal_multi_bleu_perl("./", text_list, pred_list)
+    print(multi_bleu)
+    multi_bleu_score = float(multi_bleu.split(",")[0].split(" ")[-1])
+    print("multi bleu = ",multi_bleu_score)
         

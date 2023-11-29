@@ -6,19 +6,24 @@ import math
 
 class CustomLinearLayer(nn.Module):
     """ Custom Linear layer but mimics a standard linear layer """
-    def __init__(self, size_in, size_out, alpha):
+    def __init__(self, args, size_in, size_out):
         super().__init__()
+        self.args = args
         self.size_in, self.size_out = size_in, size_out
-        self.alpha=alpha
+        self.alpha=args.alpha
+        if args.act_type == "softmax":
+            self.weight_act = nn.Softmax(dim=-1)
+        elif args.act_type == "relu":
+            self.weight_act = nn.ReLU()
 
         weights = (torch.eye(size_out, size_in)*2-1)*self.alpha
         # print(weights)
         self.weights = nn.Parameter(weights)  # nn.Parameter is a Tensor that's a module parameter
 
     def forward(self, x):
-        w_times_x= torch.matmul(x, F.softmax(self.weights,dim=-1).t())
+        w_times_x= torch.matmul(x, self.weight_act(self.weights).t())
         return w_times_x  # w times x + b
-
+    
 class AttentionModel(nn.Module):
     def __init__(self, args, src_tokenizer, tgt_tokenizer) -> None:
         super(AttentionModel, self).__init__()
@@ -38,10 +43,10 @@ class AttentionModel(nn.Module):
                 
                 if args.softmax_linear:
                     if args.share_eye:
-                        self.eye_linear = CustomLinearLayer(1000,1000,args.alpha)
+                        self.eye_linear = CustomLinearLayer(self.args, 1000,1000)
                     else:
-                        self.eye_linear_enc = CustomLinearLayer(1000,1000,args.alpha)
-                        self.eye_linear_dec = CustomLinearLayer(1000,1000,args.alpha)
+                        self.eye_linear_enc = CustomLinearLayer(self.args, 1000,1000)
+                        self.eye_linear_dec = CustomLinearLayer(self.args, 1000,1000)
                     
                 else:
                     if args.share_eye:
@@ -69,6 +74,10 @@ class AttentionModel(nn.Module):
         
         self.eos_token_id = tgt_tokenizer.eos_token_id
         self.bos_token_id = tgt_tokenizer.bos_token_id
+        
+        if self.args.weight_tie:
+            self.tgt_emb.weight = self.tgt_lm_head.weight
+            
 
     def forward(self, src, tgt):
         enc_out, (src_h_n, src_c_n) = self.enc(src) 
@@ -210,10 +219,10 @@ class MultiHeadAttention(nn.Module):
         if not self.args.no_QKproj:
             if args.softmax_linear:
                 if args.share_eye:
-                    self.eye_linear = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
+                    self.eye_linear = CustomLinearLayer(self.args, self.head_dim, self.head_dim)
                 else:
-                    self.eye_linear_q = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
-                    self.eye_linear_k = CustomLinearLayer(self.head_dim,self.head_dim,args.alpha)
+                    self.eye_linear_q = CustomLinearLayer(self.args, self.head_dim,self.head_dim)
+                    self.eye_linear_k = CustomLinearLayer(self.args, self.head_dim,self.head_dim)
                 
             else:
                 if args.share_eye:
@@ -475,6 +484,20 @@ class Transformer(nn.Module):
         self.encoder = Encoder(self.config, self.src_tokenizer)
         self.decoder = Decoder(self.config, self.trg_tokenizer)
         self.fc = nn.Linear(self.hidden_dim, self.trg_tokenizer.vocab_size)
+        
+        if self.args.decoder:
+            self.decoder.emb_layer.weight = self.fc.weight
+            
+            # if getattr(output_embeddings, "bias", None) is not None:
+            # output_embeddings.bias.data = nn.functional.pad(
+            #     output_embeddings.bias.data,
+            #     (
+            #         0,
+            #         output_embeddings.weight.shape[0] - output_embeddings.bias.shape[0],
+            #     ),
+            #     "constant",
+            #     0,
+            # )
         
         self.tgt_bos_token_id = self.trg_tokenizer.bos_token_id
 

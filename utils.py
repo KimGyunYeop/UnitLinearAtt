@@ -71,6 +71,12 @@ def parse_args():
         "--softmax_linear", default=False, action="store_true"
     )
     parser.add_argument(
+        "--act_type", default="softmax", type=str
+    )
+    parser.add_argument(
+        "--weight_tie", default=False, action="store_true"
+    )
+    parser.add_argument(
         "--alpha", type=int, default=5
     )
     
