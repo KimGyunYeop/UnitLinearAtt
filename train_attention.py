@@ -321,6 +321,8 @@ for e in range(args.epoch):
         #         param_group['lr'] = param_group['lr']*0.5
     elif args.model_type == "transformer":
         scheduler.step()
+    else:
+        assert "model type error"
     
 ######################################################################################################            
     
