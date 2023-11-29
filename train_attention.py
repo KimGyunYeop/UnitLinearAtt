@@ -178,6 +178,8 @@ else:
         model.cuda(device)
         optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=0.0001)
         scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
+        accumulate_step = args.full_batch // args.batch_size
+        print("accumul step :", accumulate_step)
     else:
         assert "error model type"
 
@@ -236,14 +238,16 @@ for e in range(args.epoch):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
                 optimizer.step()
                 optimizer.zero_grad()
-            elif args.model_type == "transformers":
+            elif args.model_type == "transformer":
+                loss = loss / accumulate_step
                 loss.backward()
                 
-                optimizer.step()
-                optimizer.zero_grad()
+                if step % accumulate_step == 0:
+                    optimizer.step()
+                    optimizer.zero_grad()
+            else:
+                assert "model type error"
                 
-                
-
         step += 1
 
     if args.deepspeed:
