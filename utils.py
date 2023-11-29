@@ -18,6 +18,9 @@ def parse_args():
         "--batch_size", type=int, default=128, required=False
     )
     parser.add_argument(
+        "--full_batch", type=int, default=256, required=False
+    )
+    parser.add_argument(
         "--epoch", type=int, default=12, required=False
     )
     parser.add_argument(

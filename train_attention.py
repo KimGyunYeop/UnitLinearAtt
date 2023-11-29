@@ -30,12 +30,15 @@ def make_dir(args):
     if "test" in args.result_path:
         os.makedirs(result_path, exist_ok=True)
     else:
-        os.mkdir(result_path)
+        os.makedirs(result_path, exist_ok=True)
 
 # mt_type = "de-en"
 args = parse_args()
 result_path = os.path.join("results",args.result_path)
 device = "cuda:{}".format(str(args.gpu))
+
+if os.path.isfile(os.path.join("results",args.result_path,"result.json")) and "test" not in args.result_path:
+    assert "result_path is exist!!!"
 
 if args.deepspeed:
     comm.init_distributed("nccl")
@@ -235,7 +238,7 @@ for e in range(args.epoch):
                 optimizer.zero_grad()
             elif args.model_type == "transformers":
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                
                 optimizer.step()
                 optimizer.zero_grad()
                 
