@@ -1,5 +1,4 @@
 {
-    "vocab_size": 0,
     "max_len": 128,
     "hidden_dim": 512,
     "ffn_dim": 2048,
