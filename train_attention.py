@@ -169,11 +169,11 @@ else:
         model.cuda(device)
         # optimizer = SGD(model.parameters(), lr=1)
         # scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
-        optimizer = Adam(model.parameters(), lr=0.001)
+        optimizer = Adam(model.parameters(), lr=args.learning_rate)
         scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     elif args.model_type == "transformer":
         model.cuda(device)
-        optimizer = Adam(model.parameters(), lr=0.001, betas=(0.9,0.98), eps=0.0001)
+        optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=0.0001)
         scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     else:
         assert "error model type"
