@@ -486,7 +486,7 @@ class Transformer(nn.Module):
         self.fc = nn.Linear(self.hidden_dim, self.trg_tokenizer.vocab_size)
         
         if self.args.decoder:
-            self.decoder.emb_layer.weight = self.fc.weight
+            self.decoder.emb_layer.emb_layer.weight = self.fc.weight
             
             # if getattr(output_embeddings, "bias", None) is not None:
             # output_embeddings.bias.data = nn.functional.pad(
