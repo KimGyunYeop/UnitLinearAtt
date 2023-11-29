@@ -218,14 +218,14 @@ class MultiHeadAttention(nn.Module):
         
         if not self.args.no_QKproj:
             if args.softmax_linear:
-                if args.share_eye:
+                if args.share_eye and self.self_attn:
                     self.eye_linear = CustomLinearLayer(self.args, self.head_dim, self.head_dim)
                 else:
                     self.eye_linear_q = CustomLinearLayer(self.args, self.head_dim,self.head_dim)
                     self.eye_linear_k = CustomLinearLayer(self.args, self.head_dim,self.head_dim)
                 
             else:
-                if args.share_eye:
+                if args.share_eye and self.self_attn:
                     self.eye_linear = nn.Linear(self.head_dim,self.head_dim,bias=False)
                     
                     if not args.random_init:
@@ -485,7 +485,7 @@ class Transformer(nn.Module):
         self.decoder = Decoder(self.config, self.trg_tokenizer)
         self.fc = nn.Linear(self.hidden_dim, self.trg_tokenizer.vocab_size)
         
-        if self.args.decoder:
+        if self.config.weight_tie:
             self.decoder.emb_layer.emb_layer.weight = self.fc.weight
             
             # if getattr(output_embeddings, "bias", None) is not None:
