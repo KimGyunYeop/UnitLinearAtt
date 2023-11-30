@@ -220,7 +220,7 @@ for e in range(args.epoch):
                 print(param.requires_grad)
                     
     for batches, label, texts in (pbar := tqdm(train_dataloader)):
-        pbar.set_description("Processing %.2f" % loss.item())
+        pbar.set_description("Train loss: %.2f" % loss.item())
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
 
