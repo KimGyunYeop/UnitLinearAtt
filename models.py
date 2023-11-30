@@ -84,7 +84,18 @@ class AttentionModel(nn.Module):
         self.bos_token_id = tgt_tokenizer.bos_token_id
         
         if self.args.weight_tie:
-            self.tgt_emb.weight = self.tgt_lm_head.weight
+            self.tgt_lm_head.weight = self.tgt_emb.weight
+            
+            if getattr(self.tgt_lm_head, "bias", None) is not None:
+                self.tgt_lm_head.bias.data = nn.functional.pad(
+                    self.tgt_lm_head.bias.data,
+                    (
+                        0,
+                        self.tgt_lm_head.weight.shape[0] - self.tgt_lm_head.bias.shape[0],
+                    ),
+                    "constant",
+                    0,
+                )
             
 
     def forward(self, src, tgt):
@@ -494,18 +505,18 @@ class Transformer(nn.Module):
         self.fc = nn.Linear(self.hidden_dim, self.trg_tokenizer.vocab_size)
         
         if self.config.weight_tie:
-            self.decoder.emb_layer.emb_layer.weight = self.fc.weight
+            self.fc.weight = self.decoder.emb_layer.emb_layer.weight
             
-            # if getattr(output_embeddings, "bias", None) is not None:
-            # output_embeddings.bias.data = nn.functional.pad(
-            #     output_embeddings.bias.data,
-            #     (
-            #         0,
-            #         output_embeddings.weight.shape[0] - output_embeddings.bias.shape[0],
-            #     ),
-            #     "constant",
-            #     0,
-            # )
+            if getattr(self.fc, "bias", None) is not None:
+                self.fc.bias.data = nn.functional.pad(
+                    self.fc.bias.data,
+                    (
+                        0,
+                        self.fc.weight.shape[0] - self.fc.bias.shape[0],
+                    ),
+                    "constant",
+                    0,
+                )
         
         self.tgt_bos_token_id = self.trg_tokenizer.bos_token_id
 

@@ -27,7 +27,7 @@ def parse_args():
         "--dataset", type=str, default="wmt14", required=False
     )
     parser.add_argument(
-        "--learning_rate", type=float, default=0.001, required=False
+        "--learning_rate", type=float, default=0.0001, required=False
     )
     parser.add_argument(
         "--gpu", type=int, default=0, required=False

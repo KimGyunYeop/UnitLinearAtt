@@ -204,6 +204,7 @@ with open(os.path.join(result_path, "model.txt"), "w") as text_file:
     text_file.write(str(model))
 result_dict = {}
 step = 0
+loss = torch.Tensor([0])
 for e in range(args.epoch):
     if args.deepspeed:
         engine.train()
@@ -218,7 +219,8 @@ for e in range(args.epoch):
                 print(param)
                 print(param.requires_grad)
                     
-    for batches, label, texts in tqdm(train_dataloader):
+    for batches, label, texts in (pbar := tqdm(train_dataloader)):
+        pbar.set_description("Processing %.2f" % loss.item())
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
 
