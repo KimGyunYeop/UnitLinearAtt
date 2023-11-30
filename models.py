@@ -165,6 +165,40 @@ class AttentionModel(nn.Module):
         return test_input, final_logit
     
     
+    def generate_beam_search(self, src, max_len=50, beam_size=5, a=0.6):
+        enc_out, (src_h_n, src_c_n) = self.enc(src) 
+        
+        batch_size = src.size()[0]
+        
+        check_eos = [[False] * beam_size] * batch_size
+        
+        test_input = torch.Tensor([self.bos_token_id] * batch_size).type(torch.long).to(src.device).view([batch_size,1]) # torch.Size([4, 1])
+        result_tensor = torch.ones([batch_size, beam_size, max_len]).type(torch.long).to(src.device)
+        final_logit = None
+        
+        
+        for _ in range(max_len):
+            logits = self.dec(enc_out, (src_h_n, src_c_n), test_input)
+            
+            if final_logit is None:
+                final_logit = logits
+            else:
+                final_logit = torch.cat([final_logit, logits[:,-1:,:]], dim=1)
+            
+            pred_token = torch.argmax(F.softmax(logits[:,-1,:], dim=-1),dim=-1).view([batch_size,1]) # torch.Size([4, 50000]) / # torch.Size([4, 1]) # 이렇게 view로 해줘도 되나? 
+            
+            test_input = torch.cat([test_input, pred_token], dim=1)
+            
+            eos_batch=(pred_token == self.eos_token_id).nonzero(as_tuple=True)[0].tolist()
+            for i in eos_batch:
+                check_eos[i]=True
+                
+            if check_eos == ([[True] * beam_size]  * batch_size):
+                break
+        
+        return test_input, final_logit
+    
+    
 
 #############################################
 
