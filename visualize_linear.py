@@ -73,7 +73,10 @@ for i in range(len(file_list)-2): # except 2 json file
     if args.share_eye:
         # print(repr(model.eye_linear.weight))
         if args.softmax_linear:
-            weight_numpy = F.softmax(model.eye_linear.weights, dim=-1).cpu().detach().numpy()
+            try:
+                weight_numpy = F.softmax(model.eye_linear.weights, dim=-1).cpu().detach().numpy()
+            except
+                weight_numpy = F.softmax(model.eye_linear.weight, dim=-1).cpu().detach().numpy()
         else:
             weight_numpy = model.eye_linear.weight.cpu().detach().numpy()
         
@@ -87,12 +90,19 @@ for i in range(len(file_list)-2): # except 2 json file
         # print(repr(model.eye_linear_enc.weight))
         # print(repr(model.eye_linear_dec.weight))
         if args.softmax_linear:
-            enc_weight_numpy = F.softmax(model.eye_linear_enc.weights, dim=-1).cpu().detach().numpy()
+            try:
+                enc_weight_numpy = F.softmax(model.eye_linear_enc.weights, dim=-1).cpu().detach().numpy()
+            except:
+                enc_weight_numpy = F.softmax(model.eye_linear_enc.weight, dim=-1).cpu().detach().numpy()
+                
         else:
             enc_weight_numpy = model.eye_linear_enc.weight.cpu().detach().numpy()
             
         if args.softmax_linear:
-            dec_weight_numpy = F.softmax(model.eye_linear_dec.weights, dim=-1).cpu().detach().numpy()
+            try:
+                dec_weight_numpy = F.softmax(model.eye_linear_dec.weights, dim=-1).cpu().detach().numpy()
+            except:
+                dec_weight_numpy = F.softmax(model.eye_linear_dec.weight, dim=-1).cpu().detach().numpy()
         else:
             dec_weight_numpy = model.eye_linear_dec.weight.cpu().detach().numpy()
         

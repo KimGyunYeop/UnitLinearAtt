@@ -37,7 +37,7 @@ args = parse_args()
 result_path = os.path.join("results",args.result_path)
 device = "cuda:{}".format(str(args.gpu))
 
-if os.path.isfile(os.path.join("results",args.result_path,"result.json")) and "test" not in args.result_path:
+if os.path.isfile(os.path.join("results",args.result_path,"result.json")) or "test" not in args.result_path:
     assert "result_path is exist!!!"
 
 if args.deepspeed:
@@ -170,10 +170,10 @@ if args.deepspeed:
 else:
     if args.model_type == "seq2seq":
         model.cuda(device)
-        # optimizer = SGD(model.parameters(), lr=1)
+        optimizer = SGD(model.parameters(), lr=1)
         # scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
-        optimizer = Adam(model.parameters(), lr=args.learning_rate)
-        scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
+        # optimizer = Adam(model.parameters(), lr=args.learning_rate)
+        # scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     elif args.model_type == "transformer":
         model.cuda(device)
         optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=0.0001)
@@ -315,10 +315,10 @@ for e in range(args.epoch):
     json.dump(result_dict, open(os.path.join(result_path, "result.json"), "w"), indent=2)
     
     if args.model_type == "seq2seq":
-        scheduler.step()
-        # if e >= args.warmup_schedule:
-        #     for param_group in optimizer.param_groups: 
-        #         param_group['lr'] = param_group['lr']*0.5
+        # scheduler.step()
+        if e >= args.warmup_schedule:
+            for param_group in optimizer.param_groups: 
+                param_group['lr'] = param_group['lr']*0.5
     elif args.model_type == "transformer":
         scheduler.step()
     else:

@@ -10,13 +10,21 @@ class CustomLinearLayer(nn.Module):
         super().__init__()
         self.args = args
         self.size_in, self.size_out = size_in, size_out
+        weights = torch.eye(size_out, size_in)
         self.alpha=args.alpha
         if args.act_type == "softmax":
             self.weight_act = nn.Softmax(dim=-1)
+            self.alpha=args.alpha
+            weights = (weights*2-1)*self.alpha
         elif args.act_type == "relu":
             self.weight_act = nn.ReLU()
+            self.alpha=args.alpha
+        elif args.act_type == "leakyrelu":
+            self.weight_act = nn.LeakyReLU(negative_slope=1.0/size_in)
+        else:
+            assert "acy type error"
 
-        weights = (torch.eye(size_out, size_in)*2-1)*self.alpha
+        
         # print(weights)
         self.weights = nn.Parameter(weights)  # nn.Parameter is a Tensor that's a module parameter
 
