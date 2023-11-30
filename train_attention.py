@@ -176,7 +176,7 @@ else:
         # scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
     elif args.model_type == "transformer":
         model.cuda(device)
-        optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=0.0001)
+        optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=1e-09)
         scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
         accumulate_step = args.full_batch // args.batch_size
         print("accumul step :", accumulate_step)
