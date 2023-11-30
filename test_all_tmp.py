@@ -93,6 +93,7 @@ for rp in result_path_list:
             best_epoch = e
     print("base epoch=",best_epoch,"\t max eval sacrebleu=",eval_max_sacrebleu, "\t eval acc=",eval_acc)
 
+    print("")
     try:
         mt_type = "-".join([args.src_lang, args.tgt_lang])
         data = datasets.load_dataset(args.dataset, mt_type, cache_dir="../../dataset/WMT")
