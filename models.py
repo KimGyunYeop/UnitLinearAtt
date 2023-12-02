@@ -82,6 +82,8 @@ class AttentionModel(nn.Module):
         
         self.eos_token_id = tgt_tokenizer.eos_token_id
         self.bos_token_id = tgt_tokenizer.bos_token_id
+        self.pad_token_id = tgt_tokenizer.pad_token_id
+        self.tgt_tokenizer = tgt_tokenizer
         
         if self.args.weight_tie:
             self.tgt_lm_head.weight = self.tgt_emb.weight
@@ -165,38 +167,149 @@ class AttentionModel(nn.Module):
         return test_input, final_logit
     
     
-    def generate_beam_search(self, src, max_len=50, beam_size=5, a=0.6):
+    def generate_beam_search(self, src, max_len=50, beam_size=5, a=0.6, min_length=5):
         enc_out, (src_h_n, src_c_n) = self.enc(src) 
         
         batch_size = src.size()[0]
+        beam_size_puls_one = beam_size+1
         
-        check_eos = [[False] * beam_size] * batch_size
+        check_eos = np.array([[False] * beam_size] * batch_size)
+        batch_clear = np.array([False] * batch_size)
         
-        test_input = torch.Tensor([self.bos_token_id] * batch_size).type(torch.long).to(src.device).view([batch_size,1]) # torch.Size([4, 1])
-        result_tensor = torch.ones([batch_size, beam_size, max_len]).type(torch.long).to(src.device)
-        final_logit = None
+        test_first_input = torch.Tensor([self.bos_token_id] * batch_size).type(torch.long).to(src.device).view([batch_size,1]) # torch.Size([4, 1])
+        test_input = torch.Tensor([[self.bos_token_id] * beam_size] * batch_size).type(torch.long).to(src.device).view([batch_size, beam_size, 1])
+        # test_cumul_prob = torch.ones([batch_size, beam_size], dtype=torch.float64).to(src.device)
+        test_cumul_prob = torch.zeros([batch_size, beam_size], dtype=torch.float64).to(src.device)
+        result_tensor = torch.ones([batch_size, beam_size, max_len]).type(torch.long).to(src.device) * self.pad_token_id
+        result_prob = torch.zeros([batch_size, beam_size], dtype=torch.float64).to(src.device)
+        
+        logits = self.dec(enc_out, (src_h_n, src_c_n), test_first_input)
+        # word_prob = F.softmax(logits[:,-1,:], dim=-1)
+        word_prob = torch.log(F.softmax(logits[:,-1,:], dim=-1))
+        pred_token = torch.topk(word_prob, k=beam_size, dim=-1)
+        
+        test_input = torch.cat([test_input, pred_token.indices.unsqueeze(-1)],dim=-1)
+        # test_cumul_prob = test_cumul_prob * pred_token.values
+        test_cumul_prob = test_cumul_prob + pred_token.values
         
         
-        for _ in range(max_len):
-            logits = self.dec(enc_out, (src_h_n, src_c_n), test_input)
+        for i in range(1, max_len-1):
             
-            if final_logit is None:
-                final_logit = logits
-            else:
-                final_logit = torch.cat([final_logit, logits[:,-1:,:]], dim=1)
+            test_cumul_prob_tmp = test_cumul_prob.unsqueeze(-1).expand(-1, -1, beam_size_puls_one)
             
-            pred_token = torch.argmax(F.softmax(logits[:,-1,:], dim=-1),dim=-1).view([batch_size,1]) # torch.Size([4, 50000]) / # torch.Size([4, 1]) # 이렇게 view로 해줘도 되나? 
+            cand_index = []
+            cand_prob = []
             
-            test_input = torch.cat([test_input, pred_token], dim=1)
-            
-            eos_batch=(pred_token == self.eos_token_id).nonzero(as_tuple=True)[0].tolist()
-            for i in eos_batch:
-                check_eos[i]=True
+            for bms in range(beam_size):
+                logits = self.dec(enc_out, (src_h_n, src_c_n), test_input[:, bms, :])
+                # word_prob = F.softmax(logits[:,-1,:], dim=-1)
+                word_prob = torch.log(F.softmax(logits[:,-1,:], dim=-1))
+                pred_token = torch.topk(word_prob, k=beam_size_puls_one, dim=-1)
                 
-            if check_eos == ([[True] * beam_size]  * batch_size):
+                # beam_cumul_prob = test_cumul_prob_tmp[:, bms, :] * pred_token.values
+                beam_cumul_prob = test_cumul_prob_tmp[:, bms, :] + pred_token.values
+                cand_prob.append(beam_cumul_prob.unsqueeze(1))
+                
+                cumul_index = torch.cat([test_input[:, bms, :].unsqueeze(1).expand(-1,beam_size_puls_one,-1), pred_token.indices.unsqueeze(-1)], dim=-1)
+                cand_index.append(cumul_index.unsqueeze(1))
+                
+            cand_index = torch.cat(cand_index, dim=1)
+            cand_prob = torch.cat(cand_prob, dim=1)
+            
+            while True:
+                select_topk = torch.topk(cand_prob.view(batch_size, -1), k=beam_size, dim=-1)
+                
+                #get cumul probabiltiy of beam size
+                test_cumul_prob = select_topk.values
+                
+                #get cumul index(seqeuence) of beam size
+                cand_index = cand_index.view(batch_size, beam_size * beam_size_puls_one, i+2)
+                test_input = []
+                for bs_index in range(batch_size):
+                    test_input.append(cand_index[bs_index,...].index_select(dim=0, index=select_topk.indices[bs_index, :]).unsqueeze(0))
+                
+                test_input = torch.cat(test_input, dim=0)
+                
+                eos_index = test_input[..., -1] == self.eos_token_id
+                eos_index = eos_index * torch.Tensor(~batch_clear).unsqueeze(-1).to(eos_index.device)
+                
+                if torch.sum(eos_index) == 0:
+                    
+                    # tmp = test_input.view(-1,i+2)
+                    # for t in range(beam_size*2):
+                    #     print(self.tgt_tokenizer.decode(tmp[t,:].tolist()))
+                    # print("\n\n")
+                    
+                    break
+                else:
+                    result_cand_index = eos_index.nonzero()
+                    for j in range(result_cand_index.size()[0]):
+                        top_index = result_cand_index[j,:].tolist()
+                        
+                        tmp_result = test_input[*top_index,:]
+                        
+                        if batch_clear[top_index[0]]:
+                            continue
+                        
+                        result_tensor[top_index[0], sum(check_eos[top_index[0]]), :tmp_result.size()[-1]] = tmp_result
+                        # print(top_index[0], sum(check_eos[top_index[0]]), tmp_result.size()[-1])
+                        # print(self.tgt_tokenizer.decode(tmp_result.tolist()))
+                        # print(result_tensor[top_index[0], sum(check_eos[top_index[0]])])
+                        # print(tmp_result)
+                        # print(result_tensor[*top_index,:])
+                        # print(result_tensor[52, 0, :])
+                        
+                        tmp_prob = test_cumul_prob[*top_index]
+                        # print(tmp_prob)
+                        #add penalty
+                        tmp_prob = tmp_prob * (((1.0 + (i+2)) ** a) / ((1.0 + min_length) ** a))
+                        result_prob[top_index[0], sum(check_eos[top_index[0]])] = tmp_prob
+                        # print(test_cumul_prob[result_cand_index[j,0],:])
+                        # print(result_prob[top_index[0], sum(check_eos[top_index[0]])])
+                        # print("-----------------\n\n")
+                        
+                        check_eos[top_index[0], sum(check_eos[top_index[0]])] = True
+                        # print(check_eos)
+                        
+                        if sum(check_eos[top_index[0]]) == beam_size:
+                            batch_clear[top_index[0]] = True
+                        
+                        cand_prob.view(batch_size, -1)[top_index[0], select_topk.indices[*top_index]] = -float('inf')
+            
+            # print(test_input.shape)
+            # print(sum(batch_clear))
+            if sum(batch_clear) == batch_size:
                 break
         
-        return test_input, final_logit
+        if not sum(batch_clear) == batch_size:
+            for j in range(batch_size):
+                if not batch_clear[j]:
+                    for e, k in enumerate(range(sum(check_eos[j]), beam_size)):
+                        if check_eos[j, k]:
+                            assert 0
+                            
+                        tmp_result = test_input[j, e,:]
+                        result_tensor[j, k, :max_len] = tmp_result[:max_len]
+                        result_tensor[j,k,-1] = self.eos_token_id
+                        
+                        tmp_prob = test_cumul_prob[j,e]
+                        tmp_prob = tmp_prob * (((1.0 + (i+2)) ** a) / ((1.0 + min_length) ** a))
+                        result_prob[j,k] = tmp_prob
+        
+        # print("\n\n")
+        # print(result_prob)
+        top1_cand = torch.argmax(result_prob, dim=-1)
+        # print(top1_cand)
+        # print(result_tensor.shape)
+        # result_tensor = result_tensor.index_select(dim=1, index=top1_cand)
+        
+        final_result = []
+        for i in range(batch_size):
+            final_result.append(result_tensor[i:i+1,top1_cand[i]])
+        
+        final_result = torch.cat(final_result, dim=0)
+        
+        return final_result, None
     
     
 

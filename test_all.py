@@ -43,9 +43,14 @@ def cal_multi_bleu_perl(base_path, ref, pred):
     return str(result)
 
 device = "cuda:{}".format(str(0))
+greedy = False
 result_path_list = os.listdir("results")
 
-result_csv_file = "result.csv"
+if greedy:
+    result_csv_file = "result_greedy.csv"
+else:
+    result_csv_file = "result.csv"
+    
 cols = ["result_path", "test_BLEU", "test_sacreBLEU", "dev_BLEU", "dev_ACC", "transformer", "eye", "pre_learn", "unit_init", "weight_tie", "weight_act", "act_type", "alpha", "attention", "reverse"]
 arg_name = ["result_path", None, None, None, None, "model_type", "share_eye", "warmup_epochs", "random_init", "weight_tie", "softmax_linear", "act_type", "alpha", "no_attention", "source_reverse"]
 col2arg = dict(zip(cols, arg_name))
@@ -63,13 +68,14 @@ for rp in result_path_list:
     if rp in exist_result:
         continue
 
-    
+    print("\n\n")
     result_path = os.path.join("results",rp)
 
     try:
         with open(os.path.join(result_path,"config.json")) as f:
             json_object = json.load(f)
-    
+            print(json_object)
+
         with open(os.path.join(result_path,"result.json")) as f:
             result_dict = json.load(f)  
     except:
@@ -163,10 +169,14 @@ for rp in result_path_list:
             batches = [batch.cuda(device) for batch in batches]
             label = label.cuda(device)
 
-            outputs, test_logit = model.generate(batches[0], max_len=args.max_vocab)
+            if greedy:
+                outputs, test_logit = model.generate(batches[0], max_len=args.max_vocab)
+                
+            else:
+                outputs, test_logit = model.generate_beam_search(batches[0], max_len=args.max_vocab)
             # print(outputs)
             
-            batch_size, seq_len, prob_dim = test_logit.size()
+            batch_size, seq_len = outputs.size()
             
             for i in range(batch_size):
                 if args.tokenizer_uncased:

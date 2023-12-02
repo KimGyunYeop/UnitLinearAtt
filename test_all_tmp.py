@@ -42,7 +42,7 @@ def cal_multi_bleu_perl(base_path, ref, pred):
     
     return str(result)
 
-device = "cuda:{}".format(str(0))
+device = "cuda:{}".format(str(1))
 result_path_list = os.listdir("results")
 
 result_csv_file = "result.csv"
@@ -50,19 +50,8 @@ cols = ["result_path", "test_BLEU", "test_sacreBLEU", "dev_BLEU", "dev_ACC", "tr
 arg_name = ["result_path", None, None, None, None, "model_type", "share_eye", "warmup_epochs", "random_init", "weight_tie", "softmax_linear", "act_type", "alpha", "no_attention", "source_reverse"]
 col2arg = dict(zip(cols, arg_name))
 
-if os.path.isfile(result_csv_file):
-    result_df = pd.read_csv(result_csv_file, index_col = 0)
-    exist_result = list(result_df["result_path"])
-else:
-    result_df = pd.DataFrame(columns=cols)
-    exist_result = []
-
-for rp in result_path_list:
+for rp in ["en_de_dot_adam_5000"]:
     args = parse_args()
-    
-    if rp in exist_result:
-        continue
-
     
     result_path = os.path.join("results",rp)
 
@@ -74,14 +63,11 @@ for rp in result_path_list:
             result_dict = json.load(f)  
     except:
         continue  
-
+    
     args = vars(args)
     args.update(json_object)
     args = Namespace(**args)
     
-    if not os.path.isdir(os.path.join(result_path, str(args.epoch-1))):
-        continue
-
     # print(result_dict)
     eval_max_sacrebleu = 0
     best_epoch = 0
@@ -142,9 +128,6 @@ for rp in result_path_list:
             label = label.cuda(device)
 
             outputs, test_logit = model.generate_beam_search(batches[0], max_len=args.max_vocab)
-            
-            assert 0
-            # print(outputs)
             
             batch_size, seq_len, prob_dim = test_logit.size()
             
