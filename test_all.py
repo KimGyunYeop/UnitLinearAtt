@@ -42,7 +42,7 @@ def cal_multi_bleu_perl(base_path, ref, pred):
     
     return str(result)
 
-device = "cuda:{}".format(str(0))
+device = "cuda:{}".format(str(1))
 greedy = False
 result_path_list = os.listdir("results")
 
@@ -94,6 +94,7 @@ for rp in result_path_list:
     eval_acc = 0
     for e, i in result_dict.items():
         if i["sacrebleu"] >= eval_max_sacrebleu:
+        # if i["accuracy"] >= eval_acc:
             eval_max_sacrebleu = i["sacrebleu"]
             eval_acc = i["accuracy"]
             best_epoch = e
