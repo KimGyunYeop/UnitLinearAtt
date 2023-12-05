@@ -170,15 +170,15 @@ if args.deepspeed:
 else:
     if args.model_type == "seq2seq":
         model.cuda(device)
-        optimizer = SGD(model.parameters(), lr=1)
-        # scheduler = StepLR(optimizer=optimizer, step_size=1, gamma=0.5)
-        # optimizer = Adam(model.parameters(), lr=args.learning_rate)
-        # scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
+        optimizer = Adam(model.parameters(), lr=args.learning_rate)
+        scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
+        lf = nn.CrossEntropyLoss()
     elif args.model_type == "transformer":
         model.cuda(device)
         optimizer = Adam(model.parameters(), lr=args.learning_rate, betas=(0.9,0.98), eps=1e-09)
         scheduler = StepLR(optimizer, step_size=4, gamma=0.8)
         accumulate_step = args.full_batch // args.batch_size
+        lf = nn.CrossEntropyLoss(label_smoothing=0.1)
         print("accumul step :", accumulate_step)
     else:
         assert "error model type"
@@ -186,7 +186,6 @@ else:
 print(args)
 print(model)
 # optimizer = Adam(model.parameters(), lr=args.learning_rate)
-lf = nn.CrossEntropyLoss()
     
 sacrebleu = evaluate.load("sacrebleu")
 
@@ -203,9 +202,11 @@ json.dump(vars(args), open(os.path.join(result_path, "config.json"), "w"), inden
 with open(os.path.join(result_path, "model.txt"), "w") as text_file:
     text_file.write(str(model))
 result_dict = {}
-step = 0
+step = 1
+update_step = 1
 loss = torch.Tensor([0])
 for e in range(args.epoch):
+            
     if args.deepspeed:
         engine.train()
     else:
@@ -220,6 +221,10 @@ for e in range(args.epoch):
                 print(param.requires_grad)
                     
     for batches, label, texts in (pbar := tqdm(train_dataloader)):
+        if args.model_type == "transformer":
+            for param_group in optimizer.param_groups: 
+                param_group['lr'] = (transformer_config["hidden_dim"] **-0.5) * min(update_step**-0.5, update_step * (4000**-1.5))
+                
         pbar.set_description("Train loss: %.2f" % loss.item())
         batches = [batch.cuda(device) for batch in batches]
         label = label.cuda(device)
@@ -247,6 +252,7 @@ for e in range(args.epoch):
                 if step % accumulate_step == 0:
                     optimizer.step()
                     optimizer.zero_grad()
+                    update_step += 1
             else:
                 assert "model type error"
                 
@@ -317,12 +323,13 @@ for e in range(args.epoch):
     json.dump(result_dict, open(os.path.join(result_path, "result.json"), "w"), indent=2)
     
     if args.model_type == "seq2seq":
-        # scheduler.step()
-        if e >= args.warmup_schedule:
-            for param_group in optimizer.param_groups: 
-                param_group['lr'] = param_group['lr']*0.5
-    elif args.model_type == "transformer":
         scheduler.step()
+        # if e >= args.warmup_schedule:
+        #     for param_group in optimizer.param_groups: 
+        #         param_group['lr'] = param_group['lr']*0.5
+    elif args.model_type == "transformer":
+        pass
+        # scheduler.step()
     else:
         assert "model type error"
     

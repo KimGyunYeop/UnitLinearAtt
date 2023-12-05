@@ -21,7 +21,7 @@ def parse_args():
         "--full_batch", type=int, default=256, required=False
     )
     parser.add_argument(
-        "--epoch", type=int, default=12, required=False
+        "--epoch", type=int, default=20, required=False
     )
     parser.add_argument(
         "--dataset", type=str, default="wmt14", required=False
@@ -62,6 +62,9 @@ def parse_args():
         "--warmup_schedule",  type=int, default=8, required=False
     )
     parser.add_argument(
+        "--warmup_steps",  type=int, default=4000, required=False
+    )
+    parser.add_argument(
         "--attention_type", type=str, default=None, required=False
     )
     parser.add_argument(
@@ -85,7 +88,7 @@ def parse_args():
     
     #tokenizer argument
     parser.add_argument(
-        "--tokenizer_maxvocab", type=int, default=50000, required=False
+        "--tokenizer_maxvocab", type=int, default=20000, required=False
     )
     parser.add_argument(
         "--tokenizer_uncased", default=False, action="store_true", required=False

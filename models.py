@@ -37,8 +37,8 @@ class AttentionModel(nn.Module):
         super(AttentionModel, self).__init__()
         self.args = args
 
-        self.src_emb = nn.Embedding(num_embeddings=args.tokenizer_maxvocab, embedding_dim=1000)
-        self.tgt_emb = nn.Embedding(num_embeddings=args.tokenizer_maxvocab, embedding_dim=1000)
+        self.src_emb = nn.Embedding(num_embeddings=args.tokenizer_maxvocab, embedding_dim=1000, padding_idx=src_tokenizer.pad_token_id)
+        self.tgt_emb = nn.Embedding(num_embeddings=args.tokenizer_maxvocab, embedding_dim=1000, padding_idx=tgt_tokenizer.pad_token_id)
 
         self.enc_lstm = nn.LSTM(1000,1000, num_layers=4, batch_first=True, dropout=0.2)
         self.dec_lstm = nn.LSTM(1000,1000, num_layers=4, batch_first=True, dropout=0.2)
@@ -84,6 +84,7 @@ class AttentionModel(nn.Module):
         self.bos_token_id = tgt_tokenizer.bos_token_id
         self.pad_token_id = tgt_tokenizer.pad_token_id
         self.tgt_tokenizer = tgt_tokenizer
+        self.src_tokenizer = src_tokenizer
         
         if self.args.weight_tie:
             self.tgt_lm_head.weight = self.tgt_emb.weight
@@ -102,15 +103,17 @@ class AttentionModel(nn.Module):
 
     def forward(self, src, tgt):
         enc_out, (src_h_n, src_c_n) = self.enc(src) 
-        logits = self.dec(enc_out, (src_h_n, src_c_n), tgt)
+        logits = self.dec(enc_out, (src_h_n, src_c_n), tgt, src)
 
         return logits
 
     def enc(self, src):
         return self.enc_lstm(self.src_emb(src)) 
     
-    def dec(self, enc_out, enc_hidden, tgt):
+    def dec(self, enc_out, enc_hidden, tgt, src):
         src_h_n, src_c_n = enc_hidden
+        
+        enc_dec_mask = torch.where(src==self.src_tokenizer.pad_token_id, 0, 1).unsqueeze(1)
         
         dec_out, _ = self.dec_lstm(self.tgt_emb(tgt), (src_h_n, src_c_n))
         
@@ -123,7 +126,7 @@ class AttentionModel(nn.Module):
                     dec_out=self.eye_linear_dec(dec_out)
                     enc_out=self.eye_linear_enc(enc_out)
                             
-            attn_score=torch.matmul(dec_out,enc_out.transpose(1,2))
+            attn_score=torch.matmul(dec_out,enc_out.transpose(1,2)).masked_fill(enc_dec_mask==0, float('-inf'))
             attn_score=F.softmax(attn_score,dim=-1)
             attn_value=torch.matmul(attn_score,enc_out)
             
@@ -146,7 +149,7 @@ class AttentionModel(nn.Module):
         final_logit = None
         
         for _ in range(max_len):
-            logits = self.dec(enc_out, (src_h_n, src_c_n), test_input)
+            logits = self.dec(enc_out, (src_h_n, src_c_n), test_input, src)
             
             if final_logit is None:
                 final_logit = logits
@@ -183,7 +186,7 @@ class AttentionModel(nn.Module):
         result_tensor = torch.ones([batch_size, beam_size, max_len]).type(torch.long).to(src.device) * self.pad_token_id
         result_prob = torch.zeros([batch_size, beam_size], dtype=torch.float64).to(src.device)
         
-        logits = self.dec(enc_out, (src_h_n, src_c_n), test_first_input)
+        logits = self.dec(enc_out, (src_h_n, src_c_n), test_first_input, src)
         # word_prob = F.softmax(logits[:,-1,:], dim=-1)
         word_prob = torch.log(F.softmax(logits[:,-1,:], dim=-1))
         pred_token = torch.topk(word_prob, k=beam_size, dim=-1)
@@ -201,7 +204,7 @@ class AttentionModel(nn.Module):
             cand_prob = []
             
             for bms in range(beam_size):
-                logits = self.dec(enc_out, (src_h_n, src_c_n), test_input[:, bms, :])
+                logits = self.dec(enc_out, (src_h_n, src_c_n), test_input[:, bms, :], src)
                 # word_prob = F.softmax(logits[:,-1,:], dim=-1)
                 word_prob = torch.log(F.softmax(logits[:,-1,:], dim=-1))
                 pred_token = torch.topk(word_prob, k=beam_size_puls_one, dim=-1)
